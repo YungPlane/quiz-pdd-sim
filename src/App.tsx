@@ -152,16 +152,6 @@ function QuizPage({ accessGranted, setMode }: QuizPageProps) {
     }
   }
 
-  const handleRestart = () => {
-    setUserInfo(null)
-    setQuizState('start')
-    setCurrentQuestionIndex(0)
-    setAnswers([])
-    setSelectedAnswer(null)
-    setShowResult(false)
-    setSubmitError('')
-  }
-
   const getButtonClassName = (optionIndex: number) => {
     if (!showResult) {
       return selectedAnswer === optionIndex ? 'option-button selected' : 'option-button'
