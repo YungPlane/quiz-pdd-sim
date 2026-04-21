@@ -1,13 +1,23 @@
 import { useState } from 'react';
+import { getQuizByType } from '../data/questions';
+import type { QuizType } from '../data/questions';
 
 interface UserLoginProps {
   onLogin: (fio: string, school: string) => void;
+  quizType?: QuizType;
 }
 
-export function UserLogin({ onLogin }: UserLoginProps) {
+export function UserLogin({ onLogin, quizType = 'sim' }: UserLoginProps) {
   const [fio, setFio] = useState('');
   const [school, setSchool] = useState('');
   const [errors, setErrors] = useState<{ fio?: string; school?: string }>({});
+  
+  // Get quiz data based on quiz type
+  const quizData = getQuizByType(quizType);
+  const quizName = quizData?.name || 'Викторина по СИМ';
+  const quizDescription = quizData?.description || 'Проверьте свои знания правил дорожного движения для средств индивидуальной мобильности (СИМ)';
+  const quizIcon = quizData?.icon || '🛴';
+  const questionCount = quizType === 'med' ? 10 : (quizData?.questions.length || 20);
 
   const validate = (): boolean => {
     const newErrors: { fio?: string; school?: string } = {};
@@ -19,7 +29,7 @@ export function UserLogin({ onLogin }: UserLoginProps) {
     }
 
     if (!school.trim()) {
-      newErrors.school = 'Введите название школы';
+      newErrors.school = 'Введите город или округ';
     }
 
     setErrors(newErrors);
@@ -36,11 +46,11 @@ export function UserLogin({ onLogin }: UserLoginProps) {
   return (
     <div className="app-container">
       <div className="login-screen">
-        <div className="logo">🛴</div>
+        <div className="logo">{quizIcon}</div>
         <h1>БЕЗОПАСНОЕ КОЛЕСО 2026</h1>
-        <h2>Викторина по СИМ</h2>
+        <h2>{quizName}</h2>
         <p className="description">
-          Проверьте свои знания правил дорожного движения для средств индивидуальной мобильности (СИМ)
+          {quizDescription}
         </p>
 
         <form className="login-form" onSubmit={handleSubmit}>
@@ -59,13 +69,13 @@ export function UserLogin({ onLogin }: UserLoginProps) {
           </div>
 
           <div className="form-group">
-            <label htmlFor="school">Образовательная организация</label>
+            <label htmlFor="school">Город, округ</label>
             <input
               type="text"
               id="school"
               value={school}
               onChange={(e) => setSchool(e.target.value)}
-              placeholder="МБОУ «СОШ №1»"
+              placeholder="Великий Новгород»"
               className={errors.school ? 'error' : ''}
               autoComplete="organization"
             />
@@ -79,7 +89,7 @@ export function UserLogin({ onLogin }: UserLoginProps) {
 
         <div className="info-cards">
           <div className="info-card">
-            <span className="info-number">20</span>
+            <span className="info-number">{questionCount}</span>
             <span className="info-label">вопросов</span>
           </div>
         </div>

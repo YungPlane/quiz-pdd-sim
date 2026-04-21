@@ -12,12 +12,14 @@ interface QuizResult {
     selectedAnswer: number;
     isCorrect: boolean;
   }>;
+  quizType?: string;
 }
 
 interface ResultRecord extends Omit<QuizResult, 'passed'> {
   id: number;
   passed: number;
   created_at: string;
+  quiz_type: string;
 }
 
 interface ResultsResponse {
@@ -107,6 +109,7 @@ class ApiService {
     sortBy?: string;
     order?: 'ASC' | 'DESC';
     search?: string;
+    quizType?: string;
   }): Promise<ResultsResponse> {
     const queryParams = new URLSearchParams();
     if (params?.page) queryParams.append('page', params.page.toString());
@@ -114,6 +117,7 @@ class ApiService {
     if (params?.sortBy) queryParams.append('sortBy', params.sortBy);
     if (params?.order) queryParams.append('order', params.order);
     if (params?.search) queryParams.append('search', params.search);
+    if (params?.quizType) queryParams.append('quizType', params.quizType);
 
     const response = await fetch(`${API_BASE_URL}/results?${queryParams}`, {
       headers: this.getHeaders(),
@@ -127,8 +131,11 @@ class ApiService {
   }
 
   // Get statistics
-  async getStatistics(): Promise<Statistics> {
-    const response = await fetch(`${API_BASE_URL}/statistics`, {
+  async getStatistics(quizType?: string): Promise<Statistics> {
+    const queryParams = new URLSearchParams();
+    if (quizType) queryParams.append('quizType', quizType);
+
+    const response = await fetch(`${API_BASE_URL}/statistics?${queryParams}`, {
       headers: this.getHeaders(),
     });
 
@@ -139,9 +146,12 @@ class ApiService {
     return response.json();
   }
 
-  // Export results to CSV
-  async exportResults(): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/results/export`, {
+  // Export results to Excel
+  async exportResults(quizType?: string): Promise<void> {
+    const queryParams = new URLSearchParams();
+    if (quizType) queryParams.append('quizType', quizType);
+
+    const response = await fetch(`${API_BASE_URL}/results/export?${queryParams}`, {
       headers: this.getHeaders(),
     });
 
@@ -153,7 +163,7 @@ class ApiService {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'results.csv';
+    a.download = `results${quizType ? `_${quizType}` : ''}.xlsx`;
     document.body.appendChild(a);
     a.click();
     window.URL.revokeObjectURL(url);

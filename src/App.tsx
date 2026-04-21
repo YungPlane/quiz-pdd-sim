@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect } from 'react'
+import { BrowserRouter as Router, Routes, Route, useParams, useNavigate, Navigate } from 'react-router-dom'
 import './App.css'
-import { questions } from './data/questions'
+import { quizzes, getQuizByType, getRandomMedicineTicket } from './data/questions'
+import type { QuizType } from './data/questions'
 import { UserLogin } from './components/UserLogin'
 import { AdminLogin } from './components/AdminLogin'
 import { AdminDashboard } from './components/AdminDashboard'
@@ -20,8 +22,16 @@ interface UserInfo {
   school: string
 }
 
-function App() {
-  const [mode, setMode] = useState<AppMode>('main')
+interface QuizPageProps {
+  accessGranted: boolean
+  setMode: (mode: AppMode) => void
+}
+
+// Quiz Page Component
+function QuizPage({ accessGranted, setMode }: QuizPageProps) {
+  const { quizType } = useParams<{ quizType: string }>()
+  const navigate = useNavigate()
+  
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null)
   const [quizState, setQuizState] = useState<QuizState>('start')
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
@@ -30,76 +40,43 @@ function App() {
   const [showResult, setShowResult] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
-  const [adminUsername, setAdminUsername] = useState('')
-  const [accessGranted, setAccessGranted] = useState(false)
 
-  // Check for existing sessions on mount
-  useEffect(() => {
-    const checkSessions = async () => {
-      // Check admin session first
-      const adminToken = localStorage.getItem('adminToken')
-      const username = localStorage.getItem('adminUsername')
-      if (adminToken && username) {
-        try {
-          const response = await api.verifyAdmin()
-          if (response.valid) {
-            setAdminUsername(response.username)
-            setMode('adminDashboard')
-            setAccessGranted(true)
-            return
-          }
-        } catch {
-          api.logout()
-          localStorage.removeItem('adminToken')
-          localStorage.removeItem('adminUsername')
-        }
-      }
+  // Get the current quiz data
+  const currentQuiz = useMemo(() => {
+    if (!quizType || !['sim', 'pdd', 'med'].includes(quizType)) return null
+    return getQuizByType(quizType as QuizType)
+  }, [quizType])
 
-      // Check access token for quiz (separate from admin session)
-      const quizAccessToken = localStorage.getItem('quizAccessToken')
-      if (quizAccessToken) {
-        try {
-          // Verify the quiz access token
-          const response = await api.verifyAdmin()
-          if (response.valid) {
-            setAccessGranted(true)
-            setMode('userLogin')
-          } else {
-            // Token invalid, clear it
-            localStorage.removeItem('quizAccessToken')
-          }
-        } catch {
-          // Token invalid, clear it
-          localStorage.removeItem('quizAccessToken')
-        }
-      }
+  // For medicine quiz, use random ticket selection
+  const questions = useMemo(() => {
+    if (quizType === 'med') {
+      return getRandomMedicineTicket()
     }
-    checkSessions()
-  }, [])
+    return currentQuiz?.questions || []
+  }, [quizType, currentQuiz?.questions])
+  const currentQuestion = useMemo(() => questions[currentQuestionIndex], [currentQuestionIndex, questions])
 
-  const currentQuestion = useMemo(() => questions[currentQuestionIndex], [currentQuestionIndex])
-  
-  const score = useMemo(() => answers.filter(a => a.isCorrect).length, [answers])
+  // Сбрасываем состояние при изменении типа теста
+  useEffect(() => {
+    setQuizState('start')
+    setCurrentQuestionIndex(0)
+    setAnswers([])
+    setSelectedAnswer(null)
+    setShowResult(false)
+    setUserInfo(null)
+    setSubmitError('')
+  }, [quizType])
 
-  const handleAccessLogin = async (username: string, password: string) => {
-    // Use admin login to authenticate
-    const data = await api.adminLogin(username, password)
-    
-    // Store access token for quiz access (separate from admin session)
-    localStorage.setItem('quizAccessToken', data.token)
-    setAccessGranted(true)
-    setMode('userLogin')
-    
-    // Clear any existing admin session to avoid confusion
-    localStorage.removeItem('adminToken')
-    localStorage.removeItem('adminUsername')
-  }
+  const score = useMemo(() => {
+    const correctAnswers = answers.filter(a => a.isCorrect).length
+    const totalQuestions = questions.length
+    const wrongAnswers = totalQuestions - correctAnswers
+    return wrongAnswers * 4 // Each wrong answer gives 4 penalty points (positive)
+  }, [answers, questions.length])
 
-  const handleAdminLogin = async (username: string, password: string) => {
-    const data = await api.adminLogin(username, password)
-    setAdminUsername(data.username)
-    setMode('adminDashboard')
-    setAccessGranted(true)
+  // Redirect to home if quiz type is invalid
+  if (!currentQuiz) {
+    return <Navigate to="/" replace />
   }
 
   const handleUserLogin = (fio: string, school: string) => {
@@ -110,24 +87,6 @@ function App() {
     setSelectedAnswer(null)
     setShowResult(false)
     setSubmitError('')
-  }
-
-  const handleAdminLogout = () => {
-    api.logout()
-    localStorage.removeItem('adminToken')
-    localStorage.removeItem('adminUsername')
-    localStorage.removeItem('quizAccessToken')
-    setAdminUsername('')
-    setAccessGranted(false)
-    setMode('main')
-  }
-
-  const handleBackToMain = () => {
-    setMode('main')
-  }
-
-  const handleBackToAccessLogin = () => {
-    setMode('accessLogin')
   }
 
   const handleStartQuiz = () => {
@@ -165,7 +124,10 @@ function App() {
   const saveResult = async () => {
     if (!userInfo) return
     
-    const percentage = Math.round((score / questions.length) * 100)
+    // Calculate percentage based on penalty system: 0 is best (0 penalty), 80 is worst
+    // Convert to 0-100% scale where 0 penalty = 100%, 80 penalty = 0%
+    const maxPenalty = questions.length * 4 // 80
+    const percentage = Math.round(((maxPenalty - score) / maxPenalty) * 100)
     const passed = percentage >= 70
 
     setIsSubmitting(true)
@@ -179,7 +141,8 @@ function App() {
         totalQuestions: questions.length,
         percentage,
         passed,
-        answers
+        answers,
+        quizType: quizType as QuizType
       })
     } catch (err) {
       setSubmitError('Не удалось сохранить результат. Попробуйте позже.')
@@ -217,66 +180,16 @@ function App() {
     return 'option-button disabled'
   }
 
-  // Show admin login (for admin panel access)
-  if (mode === 'adminLogin') {
-    return (
-      <AdminLogin 
-        onLogin={handleAdminLogin} 
-        onBackToUserLogin={handleBackToMain}
-      />
-    )
-  }
-
-  // Show admin dashboard
-  if (mode === 'adminDashboard') {
-    return (
-      <AdminDashboard 
-        onLogout={handleAdminLogout}
-        username={adminUsername}
-      />
-    )
-  }
-
-  // Show access login (for quiz access)
-  if (mode === 'accessLogin') {
-    return (
-      <AdminLogin 
-        onLogin={handleAccessLogin} 
-        onBackToUserLogin={handleBackToAccessLogin}
-      />
-    )
-  }
-
-  // Show main screen (no access granted)
+  // Show access denied if not logged in
   if (!accessGranted) {
-    return (
-      <div className="app-container">
-        <div className="login-screen">
-          <div className="logo">🛴</div>
-          <h1>БЕЗОПАСНОЕ КОЛЕСО 2026</h1>
-          <h2>Викторина по СИМ</h2>
-          <p className="description">
-            Для начала тестирования необходима авторизация администратора
-          </p>
-
-          <div className="access-prompt">
-            <button className="start-button" onClick={() => setMode('accessLogin')}>
-              Авторизоваться для доступа к викторине
-            </button>
-          </div>
-        </div>
-        <button className="admin-link" onClick={() => setMode('adminLogin')}>
-          Админ-панель
-        </button>
-      </div>
-    )
+    return <Navigate to="/" replace />
   }
 
   // Show user login (no userInfo)
   if (!userInfo) {
     return (
       <>
-        <UserLogin onLogin={handleUserLogin} />
+        <UserLogin onLogin={handleUserLogin} quizType={quizType as QuizType} />
         <button className="admin-link" onClick={() => setMode('adminLogin')}>
           Админ-панель
         </button>
@@ -292,9 +205,10 @@ function App() {
           Админ-панель
         </button>
         <div className="start-screen">
-          <div className="logo">🛴</div>
-          <h1>БЕЗОПАСНОЕ КОЛЕСО 2026</h1>
-          <h2>Викторина по СИМ</h2>
+          <div className="logo">{currentQuiz.icon}</div>
+          <h1>{currentQuiz.title}</h1>
+          <h2>{currentQuiz.name}</h2>
+          <p className="description">{currentQuiz.description}</p>
           <div className="user-info-display">
             <p><strong>Участник:</strong> {userInfo.fio}</p>
             <p><strong>Школа:</strong> {userInfo.school}</p>
@@ -311,6 +225,17 @@ function App() {
           <button className="change-user-btn" onClick={() => setUserInfo(null)}>
             Изменить данные
           </button>
+          <div className="quiz-nav">
+            {quizzes.map(quiz => (
+              <button
+                key={quiz.id}
+                className={`quiz-nav-btn ${quiz.id === quizType ? 'active' : ''}`}
+                onClick={() => navigate(`/${quiz.id}`)}
+              >
+                {quiz.icon} {quiz.name}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     )
@@ -318,7 +243,8 @@ function App() {
 
   // Show quiz finished screen
   if (quizState === 'finished') {
-    const percentage = Math.round((score / questions.length) * 100)
+    const maxPenalty = questions.length * 4 // 80
+    const percentage = Math.round(((maxPenalty - score) / maxPenalty) * 100)
     const passed = percentage >= 70
 
     return (
@@ -328,7 +254,7 @@ function App() {
         </button>
         <div className="result-screen">
           <div className="result-icon">{passed ? '🎉' : '😔'}</div>
-          <h1>{passed ? 'Поздравляем!' : 'Попробуйте еще раз'}</h1>
+          <h1>{passed ? 'Поздравляем!' : 'Не расстраивайтесь'}</h1>
           
           {isSubmitting ? (
             <div className="saving-status">
@@ -344,7 +270,8 @@ function App() {
           <div className="score-display">
             <div className="score-circle">
               <span className="score-number">{score}</span>
-              <span className="score-total">из {questions.length}</span>
+              <span className="score-total">штрафных</span>
+              <span className="score-total">баллов</span>
             </div>
             <div className="score-percentage">{percentage}%</div>
           </div>
@@ -352,18 +279,25 @@ function App() {
           <div className="results-summary">
             <div className="summary-item correct">
               <span className="summary-label">Правильных ответов</span>
-              <span className="summary-value">{score}</span>
+              <span className="summary-value">{questions.length - Math.floor(score / 4)}</span>
             </div>
             <div className="summary-item wrong">
               <span className="summary-label">Ошибок</span>
-              <span className="summary-value">{questions.length - score}</span>
+              <span className="summary-value">{score / 4}</span>
             </div>
           </div>
 
-
-          <button className="start-button" onClick={handleRestart}>
-            Пройти заново
-          </button>
+          <div className="quiz-nav">
+            {quizzes.map(quiz => (
+              <button
+                key={quiz.id}
+                className={`quiz-nav-btn ${quiz.id === quizType ? 'active' : ''}`}
+                onClick={() => navigate(`/${quiz.id}`)}
+              >
+                {quiz.icon} {quiz.name}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     )
@@ -379,7 +313,7 @@ function App() {
         <div className="quiz-header">
           <div className="progress-info">
             <span>Вопрос {currentQuestionIndex + 1} из {questions.length}</span>
-            <span>Баллы: {score}</span>
+            <span>Штраф: {score}</span>
           </div>
           <div className="progress-bar">
             <div 
@@ -433,6 +367,163 @@ function App() {
         )}
       </div>
     </div>
+  )
+}
+
+// Main App Component
+function App() {
+  const [mode, setMode] = useState<AppMode>('main')
+  const [accessGranted, setAccessGranted] = useState(false)
+  const [adminUsername, setAdminUsername] = useState('')
+
+  // Check for existing sessions on mount
+  useEffect(() => {
+    const checkSessions = async () => {
+      // Check admin session first
+      const adminToken = localStorage.getItem('adminToken')
+      const username = localStorage.getItem('adminUsername')
+      if (adminToken && username) {
+        try {
+          const response = await api.verifyAdmin()
+          if (response.valid) {
+            setAdminUsername(response.username)
+            setMode('adminDashboard')
+            setAccessGranted(true)
+            return
+          }
+        } catch {
+          api.logout()
+          localStorage.removeItem('adminToken')
+          localStorage.removeItem('adminUsername')
+        }
+      }
+
+      // Check access token for quiz (separate from admin session)
+      const quizAccessToken = localStorage.getItem('quizAccessToken')
+      if (quizAccessToken) {
+        try {
+          // Verify the quiz access token
+          const response = await api.verifyAdmin()
+          if (response.valid) {
+            setAccessGranted(true)
+            setMode('userLogin')
+          } else {
+            // Token invalid, clear it
+            localStorage.removeItem('quizAccessToken')
+          }
+        } catch {
+          // Token invalid, clear it
+          localStorage.removeItem('quizAccessToken')
+        }
+      }
+    }
+    checkSessions()
+  }, [])
+
+  const handleAccessLogin = async (username: string, password: string) => {
+    // Use admin login to authenticate
+    const data = await api.adminLogin(username, password)
+    
+    // Store access token for quiz access (separate from admin session)
+    localStorage.setItem('quizAccessToken', data.token)
+    setAccessGranted(true)
+    setMode('userLogin')
+    
+    // Clear any existing admin session to avoid confusion
+    localStorage.removeItem('adminToken')
+    localStorage.removeItem('adminUsername')
+  }
+
+  const handleAdminLogin = async (username: string, password: string) => {
+    const data = await api.adminLogin(username, password)
+    setAdminUsername(data.username)
+    setMode('adminDashboard')
+    setAccessGranted(true)
+  }
+
+  const handleAdminLogout = () => {
+    api.logout()
+    localStorage.removeItem('adminToken')
+    localStorage.removeItem('adminUsername')
+    localStorage.removeItem('quizAccessToken')
+    setAdminUsername('')
+    setAccessGranted(false)
+    setMode('main')
+  }
+
+  // Show admin login (for admin panel access)
+  if (mode === 'adminLogin') {
+    return (
+      <AdminLogin 
+        onLogin={handleAdminLogin} 
+        onBackToUserLogin={() => setMode('main')}
+      />
+    )
+  }
+
+  // Show admin dashboard
+  if (mode === 'adminDashboard') {
+    return (
+      <AdminDashboard 
+        onLogout={handleAdminLogout}
+        username={adminUsername}
+      />
+    )
+  }
+
+  // Show access login (for quiz access)
+  if (mode === 'accessLogin') {
+    return (
+      <AdminLogin 
+        onLogin={handleAccessLogin} 
+        onBackToUserLogin={() => setMode('main')}
+      />
+    )
+  }
+
+  // Show main screen (no access granted)
+  if (!accessGranted) {
+    return (
+      <Router>
+        <div className="app-container">
+          <div className="login-screen">
+            <div className="logo">🛴</div>
+            <h1>БЕЗОПАСНОЕ КОЛЕСО 2026</h1>
+            <h2>Викторины</h2>
+            <p className="description">
+              Для начала тестирования необходима авторизация администратора
+            </p>
+
+            <div className="access-prompt">
+              <button className="start-button" onClick={() => setMode('accessLogin')}>
+                Авторизоваться для доступа к викторине
+              </button>
+            </div>
+          </div>
+          <button className="admin-link" onClick={() => setMode('adminLogin')}>
+            Админ-панель
+          </button>
+        </div>
+      </Router>
+    )
+  }
+
+  // Main app with routing
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<Navigate to="/sim" replace />} />
+        <Route 
+          path="/:quizType" 
+          element={
+            <QuizPage 
+              accessGranted={accessGranted} 
+              setMode={setMode}
+            />
+          } 
+        />
+      </Routes>
+    </Router>
   )
 }
 

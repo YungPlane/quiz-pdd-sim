@@ -10,6 +10,7 @@ interface ResultRecord {
   percentage: number;
   passed: number;
   created_at: string;
+  quiz_type: string;
   answers: Array<{
     questionId: number;
     selectedAnswer: number;
@@ -35,6 +36,7 @@ interface Pagination {
 
 type SortField = 'id' | 'fio' | 'school' | 'score' | 'percentage' | 'passed' | 'created_at';
 type SortOrder = 'ASC' | 'DESC';
+type QuizTypeFilter = 'all' | 'sim' | 'pdd' | 'med';
 
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -53,6 +55,7 @@ export function AdminDashboard({ onLogout, username }: AdminDashboardProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [quizTypeFilter, setQuizTypeFilter] = useState<QuizTypeFilter>('all');
   const [sortBy, setSortBy] = useState<SortField>('created_at');
   const [sortOrder, setSortOrder] = useState<SortOrder>('DESC');
   const [selectedResult, setSelectedResult] = useState<ResultRecord | null>(null);
@@ -66,8 +69,15 @@ export function AdminDashboard({ onLogout, username }: AdminDashboardProps) {
     try {
       setLoading(true);
       const [resultsData, statsData] = await Promise.all([
-        api.getResults({ page: pagination.page, limit: pagination.limit, search, sortBy, order: sortOrder }),
-        api.getStatistics(),
+        api.getResults({ 
+          page: pagination.page, 
+          limit: pagination.limit, 
+          search, 
+          sortBy, 
+          order: sortOrder,
+          quizType: quizTypeFilter === 'all' ? undefined : quizTypeFilter
+        }),
+        api.getStatistics(quizTypeFilter === 'all' ? undefined : quizTypeFilter),
       ]);
       setResults(resultsData.results);
       setPagination(resultsData.pagination);
@@ -78,7 +88,7 @@ export function AdminDashboard({ onLogout, username }: AdminDashboardProps) {
     } finally {
       setLoading(false);
     }
-  }, [pagination.page, pagination.limit, search, sortBy, sortOrder]);
+  }, [pagination.page, pagination.limit, search, sortBy, sortOrder, quizTypeFilter]);
 
   useEffect(() => {
     fetchData();
@@ -106,7 +116,8 @@ export function AdminDashboard({ onLogout, username }: AdminDashboardProps) {
 
   const handleExport = async () => {
     try {
-      await api.exportResults();
+      const exportQuizType = quizTypeFilter === 'all' ? undefined : quizTypeFilter;
+      await api.exportResults(exportQuizType);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка экспорта');
     }
@@ -190,7 +201,7 @@ export function AdminDashboard({ onLogout, username }: AdminDashboardProps) {
               Сменить пароль
             </button>
             <button className="export-btn" onClick={handleExport}>
-              Экспорт CSV
+              Экспорт Excel
             </button>
             <button className="logout-btn" onClick={onLogout}>
               Выйти
@@ -230,21 +241,33 @@ export function AdminDashboard({ onLogout, username }: AdminDashboardProps) {
         <div className="results-section">
           <div className="results-header">
             <h2>Результаты тестирования</h2>
-            <form className="search-form" onSubmit={handleSearch}>
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Поиск по ФИО или школе..."
-                className="search-input"
-              />
-              <button type="submit" className="search-btn">Найти</button>
-              {search && (
-                <button type="button" className="clear-btn" onClick={() => { setSearch(''); setPagination(prev => ({ ...prev, page: 1 })); }}>
-                  Сбросить
-                </button>
-              )}
-            </form>
+            <div className="filters-row">
+              <select 
+                value={quizTypeFilter} 
+                onChange={(e) => { setQuizTypeFilter(e.target.value as QuizTypeFilter); setPagination(prev => ({ ...prev, page: 1 })); }}
+                className="quiz-type-filter"
+              >
+                <option value="all">Все викторины</option>
+                <option value="sim">Викторина по СИМ</option>
+                <option value="pdd">Викторина по ПДД</option>
+                <option value="med">Викторина по медицине</option>
+              </select>
+              <form className="search-form" onSubmit={handleSearch}>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Поиск по ФИО или школе..."
+                  className="search-input"
+                />
+                <button type="submit" className="search-btn">Найти</button>
+                {search && (
+                  <button type="button" className="clear-btn" onClick={() => { setSearch(''); setPagination(prev => ({ ...prev, page: 1 })); }}>
+                    Сбросить
+                  </button>
+                )}
+              </form>
+            </div>
           </div>
 
           {error && <div className="error-message">{error}</div>}
@@ -274,13 +297,14 @@ export function AdminDashboard({ onLogout, username }: AdminDashboardProps) {
                   <th onClick={() => handleSort('created_at')} className="sortable">
                     Дата {getSortIcon('created_at')}
                   </th>
+                  <th>Викторина</th>
                   <th>Действия</th>
                 </tr>
               </thead>
               <tbody>
                 {results.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="no-results">
+                    <td colSpan={10} className="no-results">
                       Результаты не найдены
                     </td>
                   </tr>
@@ -290,7 +314,7 @@ export function AdminDashboard({ onLogout, username }: AdminDashboardProps) {
                       <td>{result.id}</td>
                       <td>{result.fio}</td>
                       <td>{result.school}</td>
-                      <td>{result.score} из {result.totalQuestions}</td>
+                      <td>{result.score}</td>
                       <td>{result.percentage}%</td>
                       <td>
                         <span className={`status-badge ${result.passed ? 'passed' : 'failed'}`}>
@@ -298,6 +322,13 @@ export function AdminDashboard({ onLogout, username }: AdminDashboardProps) {
                         </span>
                       </td>
                       <td>{formatDate(result.created_at)}</td>
+                      <td>
+                        <span className={`quiz-type-badge ${result.quiz_type}`}>
+                          {result.quiz_type === 'sim' ? '🛴 СИМ' : 
+                           result.quiz_type === 'pdd' ? '🚦 ПДД' : 
+                           result.quiz_type === 'med' ? '🏥 Медицина' : '❓'}
+                        </span>
+                      </td>
                       <td>
                         <button
                           className="details-btn"
@@ -357,7 +388,7 @@ export function AdminDashboard({ onLogout, username }: AdminDashboardProps) {
                 <div className="result-info">
                   <p><strong>ФИО:</strong> {selectedResult.fio}</p>
                   <p><strong>Школа:</strong> {selectedResult.school}</p>
-                  <p><strong>Результат:</strong> {selectedResult.score} из {selectedResult.totalQuestions} ({selectedResult.percentage}%)</p>
+                  <p><strong>Результат:</strong> {selectedResult.score} ({selectedResult.percentage}%)</p>
                   <p><strong>Дата:</strong> {formatDate(selectedResult.created_at)}</p>
                   <p><strong>Статус:</strong> <span className={`status-badge ${selectedResult.passed ? 'passed' : 'failed'}`}>
                     {selectedResult.passed ? 'Сдал' : 'Не сдал'}

@@ -30,7 +30,7 @@ export function AdminLogin({ onLogin, onBackToUserLogin }: AdminLoginProps) {
       <div className="admin-login-screen">
         <div className="logo">🔒</div>
         <h1>Админ-панель</h1>
-        <h2>Викторина по СИМ</h2>
+        <h2>Викторины</h2>
         <p className="description">
           Панель управления результатами тестирования
         </p>

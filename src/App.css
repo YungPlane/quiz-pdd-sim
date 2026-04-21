@@ -1079,6 +1079,98 @@ h2 {
   background: var(--primary-dark);
 }
 
+/* Quiz Type Filter */
+.filters-row {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.quiz-type-filter {
+  padding: 8px 12px;
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  background: var(--card-background);
+  cursor: pointer;
+  transition: border-color 0.3s;
+  min-width: 200px;
+}
+
+.quiz-type-filter:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+/* Quiz Type Badge */
+.quiz-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.quiz-type-badge.sim {
+  background: #e3f2fd;
+  color: #1976d2;
+  border: 1px solid #bbdefb;
+}
+
+.quiz-type-badge.pdd {
+  background: #fff3e0;
+  color: #f57c00;
+  border: 1px solid #ffcc02;
+}
+
+.quiz-type-badge.med {
+  background: #ffebee;
+  color: #d32f2f;
+  border: 1px solid #ffcdd2;
+}
+
+/* Quiz Navigation */
+.quiz-nav {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+.quiz-nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: var(--card-background);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.3s;
+}
+
+.quiz-nav-btn:hover {
+  border-color: var(--primary-color);
+  background: #f0f7ff;
+}
+
+.quiz-nav-btn.active {
+  background: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+
+.quiz-nav-btn.active:hover {
+  background: var(--primary-dark);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .admin-header {
@@ -1108,6 +1200,15 @@ h2 {
   .results-header {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .filters-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .quiz-type-filter {
+    width: 100%;
   }
 
   .search-form {

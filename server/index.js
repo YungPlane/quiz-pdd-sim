@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import ExcelJS from 'exceljs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -38,6 +39,7 @@ db.exec(`
     percentage INTEGER NOT NULL,
     passed INTEGER NOT NULL,
     answers TEXT NOT NULL,
+    quiz_type TEXT DEFAULT 'sim',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 `);
@@ -96,18 +98,23 @@ app.get('/api/admin/verify', authenticateToken, (req, res) => {
 
 // Get all results (admin only)
 app.get('/api/results', authenticateToken, (req, res) => {
-  const { page = 1, limit = 20, sortBy = 'created_at', order = 'DESC', search = '' } = req.query;
+  const { page = 1, limit = 20, sortBy = 'created_at', order = 'DESC', search = '', quizType = '' } = req.query;
   
   const offset = (page - 1) * limit;
   const searchPattern = `%${search}%`;
   
+  // Build WHERE clause based on filters
+  let whereClause = '(fio LIKE ? OR school LIKE ?)';
+  let params = [searchPattern, searchPattern];
+  
+  if (quizType && ['sim', 'pdd', 'med'].includes(quizType)) {
+    whereClause += ' AND quiz_type = ?';
+    params.push(quizType);
+  }
+  
   // Get total count
-  const countStmt = db.prepare(`
-    SELECT COUNT(*) as total 
-    FROM results 
-    WHERE fio LIKE ? OR school LIKE ?
-  `);
-  const { total } = countStmt.get(searchPattern, searchPattern);
+  const countStmt = db.prepare(`SELECT COUNT(*) as total FROM results WHERE ${whereClause}`);
+  const { total } = countStmt.get(...params);
   
   // Valid sort columns
   const validSortColumns = ['id', 'fio', 'school', 'score', 'percentage', 'passed', 'created_at'];
@@ -117,10 +124,10 @@ app.get('/api/results', authenticateToken, (req, res) => {
   // Get results
   const results = db.prepare(`
     SELECT * FROM results 
-    WHERE fio LIKE ? OR school LIKE ?
+    WHERE ${whereClause}
     ORDER BY ${sortColumn} ${sortOrder}
     LIMIT ? OFFSET ?
-  `).all(searchPattern, searchPattern, parseInt(limit), offset);
+  `).all(...params, parseInt(limit), offset);
   
   // Parse answers JSON
   const parsedResults = results.map(r => ({
@@ -141,24 +148,35 @@ app.get('/api/results', authenticateToken, (req, res) => {
 
 // Save quiz result
 app.post('/api/results', (req, res) => {
-  const { fio, school, score, totalQuestions, percentage, passed, answers } = req.body;
+  const { fio, school, score, totalQuestions, percentage, passed, answers, quizType } = req.body;
   
   if (!fio || !school || score === undefined || !totalQuestions || !answers) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
   
   const answersJson = JSON.stringify(answers);
+  const quizTypeValue = quizType || 'sim'; // Default to 'sim' for backward compatibility
   
   const result = db.prepare(`
-    INSERT INTO results (fio, school, score, totalQuestions, percentage, passed, answers)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(fio, school, score, totalQuestions, percentage, passed ? 1 : 0, answersJson);
+    INSERT INTO results (fio, school, score, totalQuestions, percentage, passed, answers, quiz_type)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(fio, school, score, totalQuestions, percentage, passed ? 1 : 0, answersJson, quizTypeValue);
   
   res.json({ id: result.lastInsertRowid, message: 'Result saved successfully' });
 });
 
 // Get statistics (admin only)
 app.get('/api/statistics', authenticateToken, (req, res) => {
+  const { quizType = '' } = req.query;
+  
+  let whereClause = '';
+  let params = [];
+  
+  if (quizType && ['sim', 'pdd', 'med'].includes(quizType)) {
+    whereClause = 'WHERE quiz_type = ?';
+    params = [quizType];
+  }
+  
   const stats = db.prepare(`
     SELECT 
       COUNT(*) as totalAttempts,
@@ -168,7 +186,8 @@ app.get('/api/statistics', authenticateToken, (req, res) => {
       MAX(percentage) as highestScore,
       MIN(percentage) as lowestScore
     FROM results
-  `).get();
+    ${whereClause}
+  `).get(...params);
   
   res.json({
     totalAttempts: stats.totalAttempts || 0,
@@ -180,28 +199,57 @@ app.get('/api/statistics', authenticateToken, (req, res) => {
   });
 });
 
-// Export results to CSV (admin only)
+// Export results to Excel (admin only)
 app.get('/api/results/export', authenticateToken, (req, res) => {
-  const results = db.prepare('SELECT * FROM results ORDER BY created_at DESC').all();
+  const { quizType = '' } = req.query;
   
-  const headers = ['ID', 'ФИО', 'Школа', 'Баллы', 'Всего вопросов', 'Проценты', 'Сдал', 'Дата'];
-  const csvContent = [
-    headers.join(','),
-    ...results.map(r => [
-      r.id,
-      `"${r.fio}"`,
-      `"${r.school}"`,
-      r.score,
-      r.totalQuestions,
-      r.percentage,
-      r.passed ? 'Да' : 'Нет',
-      r.created_at
-    ].join(','))
-  ].join('\n');
+  let whereClause = '';
+  let params = [];
   
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', 'attachment; filename=results.csv');
-  res.send(csvContent);
+  if (quizType && ['sim', 'pdd', 'med'].includes(quizType)) {
+    whereClause = 'WHERE quiz_type = ?';
+    params = [quizType];
+  }
+  
+  const results = db.prepare(`SELECT * FROM results ${whereClause} ORDER BY school ASC, score ASC`).all(...params);
+  
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Результаты');
+  
+  // Set column headers - include quiz type column
+  worksheet.columns = [
+    { header: 'Викторина', key: 'quiz_type', width: 15 },
+    { header: 'Регион', key: 'school', width: 30 },
+    { header: 'ФИО', key: 'fio', width: 40 },
+    { header: 'Штрафные баллы', key: 'score', width: 15 }
+  ];
+  
+  // Quiz type names mapping
+  const quizTypeNames = {
+    'sim': 'СИМ',
+    'pdd': 'ПДД',
+    'med': 'Медицина'
+  };
+  
+  // Add data rows
+  results.forEach(result => {
+    worksheet.addRow({
+      quiz_type: quizTypeNames[result.quiz_type] || result.quiz_type,
+      school: result.school,
+      fio: result.fio,
+      score: result.score
+    });
+  });
+  
+  // Set response headers
+  const filename = quizType ? `results_${quizType}.xlsx` : 'results.xlsx';
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+  
+  // Write to response
+  workbook.xlsx.write(res).then(() => {
+    res.end();
+  });
 });
 
 // Delete a result (admin only)
