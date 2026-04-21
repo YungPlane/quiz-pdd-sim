@@ -288,7 +288,7 @@ app.put('/api/admin/password', authenticateToken, (req, res) => {
   res.json({ message: 'Password changed successfully' });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://localhost:${PORT}`);
   console.log(`API available at http://localhost:${PORT}/api`);
 });
