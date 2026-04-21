@@ -201,7 +201,7 @@ function QuizPage({ accessGranted, setMode }: QuizPageProps) {
           <p className="description">{currentQuiz.description}</p>
           <div className="user-info-display">
             <p><strong>Участник:</strong> {userInfo.fio}</p>
-            <p><strong>Школа:</strong> {userInfo.school}</p>
+            <p><strong>Регион:</strong> {userInfo.school}</p>
           </div>
           <div className="info-cards">
             <div className="info-card">

@@ -257,7 +257,7 @@ export function AdminDashboard({ onLogout, username }: AdminDashboardProps) {
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Поиск по ФИО или школе..."
+                  placeholder="Поиск по ФИО или региону..."
                   className="search-input"
                 />
                 <button type="submit" className="search-btn">Найти</button>
@@ -283,7 +283,7 @@ export function AdminDashboard({ onLogout, username }: AdminDashboardProps) {
                     ФИО {getSortIcon('fio')}
                   </th>
                   <th onClick={() => handleSort('school')} className="sortable">
-                    Школа {getSortIcon('school')}
+                    Регион {getSortIcon('school')}
                   </th>
                   <th onClick={() => handleSort('score')} className="sortable">
                     Баллы {getSortIcon('score')}
@@ -387,7 +387,7 @@ export function AdminDashboard({ onLogout, username }: AdminDashboardProps) {
               <div className="modal-body">
                 <div className="result-info">
                   <p><strong>ФИО:</strong> {selectedResult.fio}</p>
-                  <p><strong>Школа:</strong> {selectedResult.school}</p>
+                  <p><strong>Регион:</strong> {selectedResult.school}</p>
                   <p><strong>Результат:</strong> {selectedResult.score} ({selectedResult.percentage}%)</p>
                   <p><strong>Дата:</strong> {formatDate(selectedResult.created_at)}</p>
                   <p><strong>Статус:</strong> <span className={`status-badge ${selectedResult.passed ? 'passed' : 'failed'}`}>
