@@ -1,5 +1,3 @@
-const API_BASE_URL = 'http://localhost:3001/api';
-
 interface QuizResult {
   fio: string;
   school: string;
@@ -56,7 +54,7 @@ class ApiService {
 
   // User result submission
   async submitResult(result: QuizResult): Promise<{ id: number }> {
-    const response = await fetch(`${API_BASE_URL}/results`, {
+    const response = await fetch(`/api/results`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(result),
@@ -72,7 +70,7 @@ class ApiService {
 
   // Admin login
   async adminLogin(username: string, password: string): Promise<{ token: string; username: string }> {
-    const response = await fetch(`${API_BASE_URL}/admin/login`, {
+    const response = await fetch(`/api/admin/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password }),
@@ -91,7 +89,7 @@ class ApiService {
 
   // Verify admin token
   async verifyAdmin(): Promise<{ valid: boolean; username: string }> {
-    const response = await fetch(`${API_BASE_URL}/admin/verify`, {
+    const response = await fetch(`/api/admin/verify`, {
       headers: this.getHeaders(),
     });
 
@@ -119,7 +117,7 @@ class ApiService {
     if (params?.search) queryParams.append('search', params.search);
     if (params?.quizType) queryParams.append('quizType', params.quizType);
 
-    const response = await fetch(`${API_BASE_URL}/results?${queryParams}`, {
+    const response = await fetch(`/api/results?${queryParams}`, {
       headers: this.getHeaders(),
     });
 
@@ -135,7 +133,7 @@ class ApiService {
     const queryParams = new URLSearchParams();
     if (quizType) queryParams.append('quizType', quizType);
 
-    const response = await fetch(`${API_BASE_URL}/statistics?${queryParams}`, {
+    const response = await fetch(`/api/statistics?${queryParams}`, {
       headers: this.getHeaders(),
     });
 
@@ -151,7 +149,7 @@ class ApiService {
     const queryParams = new URLSearchParams();
     if (quizType) queryParams.append('quizType', quizType);
 
-    const response = await fetch(`${API_BASE_URL}/results/export?${queryParams}`, {
+    const response = await fetch(`/api/results/export?${queryParams}`, {
       headers: this.getHeaders(),
     });
 
@@ -172,7 +170,7 @@ class ApiService {
 
   // Change password
   async changePassword(currentPassword: string, newPassword: string): Promise<{ message: string }> {
-    const response = await fetch(`${API_BASE_URL}/admin/password`, {
+    const response = await fetch(`/api/admin/password`, {
       method: 'PUT',
       headers: this.getHeaders(),
       body: JSON.stringify({ currentPassword, newPassword }),
@@ -188,7 +186,7 @@ class ApiService {
 
   // Delete a result
   async deleteResult(id: number): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/results/${id}`, {
+    const response = await fetch(`/api/results/${id}`, {
       method: 'DELETE',
       headers: this.getHeaders(),
     });
