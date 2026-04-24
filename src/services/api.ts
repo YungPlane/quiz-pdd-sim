@@ -39,6 +39,10 @@ interface Statistics {
   lowestScore: number;
 }
 
+interface AppSettings {
+  authRequired: boolean;
+}
+
 class ApiService {
   private getToken(): string | null {
     return localStorage.getItem('adminToken');
@@ -195,6 +199,35 @@ class ApiService {
       const error = await response.json();
       throw new Error(error.error || 'Failed to delete result');
     }
+  }
+
+  // Get app settings
+  async getSettings(): Promise<AppSettings> {
+    const response = await fetch(`/api/settings`, {
+      headers: this.getHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch settings');
+    }
+
+    return response.json();
+  }
+
+  // Update app settings
+  async updateSettings(settings: Partial<AppSettings>): Promise<{ message: string }> {
+    const response = await fetch(`/api/settings`, {
+      method: 'PUT',
+      headers: this.getHeaders(),
+      body: JSON.stringify(settings),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to update settings');
+    }
+
+    return response.json();
   }
 
   // Logout
