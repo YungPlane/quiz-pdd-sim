@@ -41,9 +41,11 @@ type QuizTypeFilter = 'all' | 'sim' | 'pdd' | 'med';
 interface AdminDashboardProps {
   onLogout: () => void;
   username: string;
+  authRequired: boolean;
+  onToggleAuthRequired: (value: boolean) => void;
 }
 
-export function AdminDashboard({ onLogout, username }: AdminDashboardProps) {
+export function AdminDashboard({ onLogout, username, authRequired, onToggleAuthRequired }: AdminDashboardProps) {
   const [results, setResults] = useState<ResultRecord[]>([]);
   const [stats, setStats] = useState<Statistics | null>(null);
   const [pagination, setPagination] = useState<Pagination>({
@@ -237,6 +239,31 @@ export function AdminDashboard({ onLogout, username }: AdminDashboardProps) {
             </div>
           </div>
         )}
+
+        {/* Settings Section */}
+        <div className="settings-section">
+          <div className="settings-card">
+            <h3>⚙️ Настройки</h3>
+            <div className="setting-item">
+              <div className="setting-info">
+                <span className="setting-label">Требовать авторизацию администратора</span>
+                <span className="setting-description">
+                  {authRequired 
+                    ? 'Для доступа к викторинам требуется авторизация администратора' 
+                    : 'Викторины доступны без авторизации'}
+                </span>
+              </div>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={authRequired}
+                  onChange={(e) => onToggleAuthRequired(e.target.checked)}
+                />
+                <span className="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
 
         <div className="results-section">
           <div className="results-header">

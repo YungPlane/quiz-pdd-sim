@@ -42,7 +42,19 @@ db.exec(`
     quiz_type TEXT DEFAULT 'sim',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
 `);
+
+// Initialize default settings
+const existingSetting = db.prepare('SELECT * FROM settings WHERE key = ?').get('authRequired');
+if (!existingSetting) {
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('authRequired', 'true');
+  console.log('Default settings initialized: authRequired=true');
+}
 
 // Create default admin if not exists
 const defaultAdmin = db.prepare('SELECT * FROM admins WHERE username = ?').get('admin');
@@ -286,6 +298,25 @@ app.put('/api/admin/password', authenticateToken, (req, res) => {
   db.prepare('UPDATE admins SET password = ? WHERE id = ?').run(hashedPassword, req.user.id);
   
   res.json({ message: 'Password changed successfully' });
+});
+
+// Get settings (public)
+app.get('/api/settings', (req, res) => {
+  const authRequiredRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('authRequired');
+  res.json({
+    authRequired: authRequiredRow ? authRequiredRow.value === 'true' : true
+  });
+});
+
+// Update settings (admin only)
+app.put('/api/settings', authenticateToken, (req, res) => {
+  const { authRequired } = req.body;
+  
+  if (authRequired !== undefined) {
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('authRequired', authRequired.toString());
+  }
+  
+  res.json({ message: 'Settings updated successfully' });
 });
 
 app.listen(PORT, "0.0.0.0", () => {

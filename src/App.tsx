@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { BrowserRouter as Router, Routes, Route, useParams, useNavigate, Navigate } from 'react-router-dom'
 import './App.css'
 import { quizzes, getQuizByType, getRandomMedicineTicket } from './data/questions'
@@ -25,10 +25,11 @@ interface UserInfo {
 interface QuizPageProps {
   accessGranted: boolean
   setMode: (mode: AppMode) => void
+  authRequired: boolean
 }
 
 // Quiz Page Component
-function QuizPage({ accessGranted, setMode }: QuizPageProps) {
+function QuizPage({ accessGranted, setMode, authRequired }: QuizPageProps) {
   const { quizType } = useParams<{ quizType: string }>()
   const navigate = useNavigate()
   
@@ -56,7 +57,7 @@ function QuizPage({ accessGranted, setMode }: QuizPageProps) {
   }, [quizType, currentQuiz?.questions])
   const currentQuestion = useMemo(() => questions[currentQuestionIndex], [currentQuestionIndex, questions])
 
-  // Сбрасываем состояние при изменении типа теста
+  // Reset state when quiz type changes
   useEffect(() => {
     setQuizState('start')
     setCurrentQuestionIndex(0)
@@ -67,15 +68,22 @@ function QuizPage({ accessGranted, setMode }: QuizPageProps) {
     setSubmitError('')
   }, [quizType])
 
+  // Calculate score - medicine quiz uses 2 penalty points, others use 4
+  const penaltyPerWrong = useMemo(() => quizType === 'med' ? 2 : 4, [quizType])
   const score = useMemo(() => {
     const correctAnswers = answers.filter(a => a.isCorrect).length
     const totalQuestions = questions.length
     const wrongAnswers = totalQuestions - correctAnswers
-    return wrongAnswers * 4 // Each wrong answer gives 4 penalty points (positive)
-  }, [answers, questions.length])
+    return wrongAnswers * penaltyPerWrong
+  }, [answers, questions.length, penaltyPerWrong])
 
   // Redirect to home if quiz type is invalid
   if (!currentQuiz) {
+    return <Navigate to="/" replace />
+  }
+
+  // Check if access is required but not granted
+  if (authRequired && !accessGranted) {
     return <Navigate to="/" replace />
   }
 
@@ -124,10 +132,11 @@ function QuizPage({ accessGranted, setMode }: QuizPageProps) {
   const saveResult = async () => {
     if (!userInfo) return
     
-    // Calculate percentage based on penalty system: 0 is best (0 penalty), 80 is worst
-    // Convert to 0-100% scale where 0 penalty = 100%, 80 penalty = 0%
-    const maxPenalty = questions.length * 4 // 80
-    const percentage = Math.round(((maxPenalty - score) / maxPenalty) * 100)
+    // Calculate percentage based on penalty system
+    // For medicine: max penalty = 10 * 2 = 20
+    // For others: max penalty = 20 * 4 = 80
+    const maxPenalty = questions.length * penaltyPerWrong
+    const percentage = Math.max(0, Math.round(((maxPenalty - score) / maxPenalty) * 100))
     const passed = percentage >= 70
 
     setIsSubmitting(true)
@@ -170,13 +179,20 @@ function QuizPage({ accessGranted, setMode }: QuizPageProps) {
     return 'option-button disabled'
   }
 
-  // Show access denied if not logged in
-  if (!accessGranted) {
-    return <Navigate to="/" replace />
+  // Show user login (no userInfo) - only if auth is required and granted
+  if (!userInfo && authRequired && accessGranted) {
+    return (
+      <>
+        <UserLogin onLogin={handleUserLogin} quizType={quizType as QuizType} />
+        <button className="admin-link" onClick={() => setMode('adminLogin')}>
+          Админ-панель
+        </button>
+      </>
+    )
   }
 
-  // Show user login (no userInfo)
-  if (!userInfo) {
+  // Show user login without auth requirement
+  if (!userInfo && !authRequired) {
     return (
       <>
         <UserLogin onLogin={handleUserLogin} quizType={quizType as QuizType} />
@@ -188,7 +204,7 @@ function QuizPage({ accessGranted, setMode }: QuizPageProps) {
   }
 
   // Show quiz start screen
-  if (quizState === 'start') {
+  if (quizState === 'start' && userInfo) {
     return (
       <div className="app-container">
         <button className="admin-link" onClick={() => setMode('adminLogin')}>
@@ -207,6 +223,10 @@ function QuizPage({ accessGranted, setMode }: QuizPageProps) {
             <div className="info-card">
               <span className="info-number">{questions.length}</span>
               <span className="info-label">вопросов</span>
+            </div>
+            <div className="info-card">
+              <span className="info-number">{penaltyPerWrong}</span>
+              <span className="info-label">штрафа за ошибку</span>
             </div>
           </div>
           <button className="start-button" onClick={handleStartQuiz}>
@@ -232,10 +252,11 @@ function QuizPage({ accessGranted, setMode }: QuizPageProps) {
   }
 
   // Show quiz finished screen
-  if (quizState === 'finished') {
-    const maxPenalty = questions.length * 4 // 80
-    const percentage = Math.round(((maxPenalty - score) / maxPenalty) * 100)
+  if (quizState === 'finished' && userInfo) {
+    const maxPenalty = questions.length * penaltyPerWrong
+    const percentage = Math.max(0, Math.round(((maxPenalty - score) / maxPenalty) * 100))
     const passed = percentage >= 70
+    const wrongAnswers = Math.floor(score / penaltyPerWrong)
 
     return (
       <div className="app-container">
@@ -269,11 +290,11 @@ function QuizPage({ accessGranted, setMode }: QuizPageProps) {
           <div className="results-summary">
             <div className="summary-item correct">
               <span className="summary-label">Правильных ответов</span>
-              <span className="summary-value">{questions.length - Math.floor(score / 4)}</span>
+              <span className="summary-value">{questions.length - wrongAnswers}</span>
             </div>
             <div className="summary-item wrong">
               <span className="summary-label">Ошибок</span>
-              <span className="summary-value">{score / 4}</span>
+              <span className="summary-value">{wrongAnswers}</span>
             </div>
           </div>
 
@@ -294,70 +315,75 @@ function QuizPage({ accessGranted, setMode }: QuizPageProps) {
   }
 
   // Show quiz playing screen
-  return (
-    <div className="app-container">
-      <button className="admin-link" onClick={() => setMode('adminLogin')}>
-        Админ-панель
-      </button>
-      <div className="quiz-screen">
-        <div className="quiz-header">
-          <div className="progress-info">
-            <span>Вопрос {currentQuestionIndex + 1} из {questions.length}</span>
-            <span>Штраф: {score}</span>
+  if (userInfo) {
+    return (
+      <div className="app-container">
+        <button className="admin-link" onClick={() => setMode('adminLogin')}>
+          Админ-панель
+        </button>
+        <div className="quiz-screen">
+          <div className="quiz-header">
+            <div className="progress-info">
+              <span>Вопрос {currentQuestionIndex + 1} из {questions.length}</span>
+              <span>Штраф: {score}</span>
+            </div>
+            <div className="progress-bar">
+              <div 
+                className="progress-fill" 
+                style={{ width: `${((currentQuestionIndex + 1) / questions.length) * 100}%` }}
+              />
+            </div>
           </div>
-          <div className="progress-bar">
-            <div 
-              className="progress-fill" 
-              style={{ width: `${((currentQuestionIndex + 1) / questions.length) * 100}%` }}
-            />
-          </div>
-        </div>
 
-        <div className="question-card">
-          <div className="question-number">Вопрос {currentQuestion.id}</div>
-          <h2 className="question-text">{currentQuestion.question}</h2>
-          {currentQuestion.imageUrl && (
-            <div className="question-image-container">
-              <img src={currentQuestion.imageUrl} alt={`Иллюстрация к вопросу ${currentQuestion.id}`} className="question-image" />
+          <div className="question-card">
+            <div className="question-number">Вопрос {currentQuestion.id}</div>
+            <h2 className="question-text">{currentQuestion.question}</h2>
+            {currentQuestion.imageUrl && (
+              <div className="question-image-container">
+                <img src={currentQuestion.imageUrl} alt={`Иллюстрация к вопросу ${currentQuestion.id}`} className="question-image" />
+              </div>
+            )}
+          </div>
+
+          <div className="options-container">
+            {currentQuestion.options.map((option, index) => (
+              <button
+                key={index}
+                className={getButtonClassName(index)}
+                onClick={() => handleAnswerSelect(index)}
+                disabled={showResult}
+              >
+                <span className="option-letter">{String.fromCharCode(1040 + index)}</span>
+                <span className="option-text">{option}</span>
+                {showResult && index === currentQuestion.correctAnswer && (
+                  <span className="check-icon">✓</span>
+                )}
+                {showResult && selectedAnswer === index && index !== currentQuestion.correctAnswer && (
+                  <span className="cross-icon">✗</span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {showResult && (
+            <div className="feedback">
+              <div className={`feedback-text ${selectedAnswer === currentQuestion.correctAnswer ? 'correct' : 'wrong'}`}>
+                {selectedAnswer === currentQuestion.correctAnswer 
+                  ? '✓ Правильно!' 
+                  : `✗ Неправильно. Правильный ответ: ${String.fromCharCode(1040 + currentQuestion.correctAnswer)}`}
+              </div>
+              <button className="next-button" onClick={handleNextQuestion}>
+                {currentQuestionIndex < questions.length - 1 ? 'Следующий вопрос' : 'Завершить'}
+              </button>
             </div>
           )}
         </div>
-
-        <div className="options-container">
-          {currentQuestion.options.map((option, index) => (
-            <button
-              key={index}
-              className={getButtonClassName(index)}
-              onClick={() => handleAnswerSelect(index)}
-              disabled={showResult}
-            >
-              <span className="option-letter">{String.fromCharCode(1040 + index)}</span>
-              <span className="option-text">{option}</span>
-              {showResult && index === currentQuestion.correctAnswer && (
-                <span className="check-icon">✓</span>
-              )}
-              {showResult && selectedAnswer === index && index !== currentQuestion.correctAnswer && (
-                <span className="cross-icon">✗</span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {showResult && (
-          <div className="feedback">
-            <div className={`feedback-text ${selectedAnswer === currentQuestion.correctAnswer ? 'correct' : 'wrong'}`}>
-              {selectedAnswer === currentQuestion.correctAnswer 
-                ? '✓ Правильно!' 
-                : `✗ Неправильно. Правильный ответ: ${String.fromCharCode(1040 + currentQuestion.correctAnswer)}`}
-            </div>
-            <button className="next-button" onClick={handleNextQuestion}>
-              {currentQuestionIndex < questions.length - 1 ? 'Следующий вопрос' : 'Завершить'}
-            </button>
-          </div>
-        )}
       </div>
-    </div>
-  )
+    )
+  }
+
+  // Fallback
+  return null
 }
 
 // Main App Component
@@ -365,10 +391,23 @@ function App() {
   const [mode, setMode] = useState<AppMode>('main')
   const [accessGranted, setAccessGranted] = useState(false)
   const [adminUsername, setAdminUsername] = useState('')
+  const [authRequired, setAuthRequired] = useState(true)
 
-  // Check for existing sessions on mount
+  // Fetch settings and check sessions on mount
   useEffect(() => {
-    const checkSessions = async () => {
+    const initApp = async () => {
+      // First, try to fetch settings from server
+      try {
+        const settings = await api.getSettings()
+        setAuthRequired(settings.authRequired)
+      } catch {
+        // If server doesn't have settings endpoint, use local storage
+        const savedAuthRequired = localStorage.getItem('authRequired')
+        if (savedAuthRequired !== null) {
+          setAuthRequired(savedAuthRequired === 'true')
+        }
+      }
+
       // Check admin session first
       const adminToken = localStorage.getItem('adminToken')
       const username = localStorage.getItem('adminUsername')
@@ -392,34 +431,26 @@ function App() {
       const quizAccessToken = localStorage.getItem('quizAccessToken')
       if (quizAccessToken) {
         try {
-          // Verify the quiz access token
           const response = await api.verifyAdmin()
           if (response.valid) {
             setAccessGranted(true)
             setMode('userLogin')
           } else {
-            // Token invalid, clear it
             localStorage.removeItem('quizAccessToken')
           }
         } catch {
-          // Token invalid, clear it
           localStorage.removeItem('quizAccessToken')
         }
       }
     }
-    checkSessions()
+    initApp()
   }, [])
 
   const handleAccessLogin = async (username: string, password: string) => {
-    // Use admin login to authenticate
     const data = await api.adminLogin(username, password)
-    
-    // Store access token for quiz access (separate from admin session)
     localStorage.setItem('quizAccessToken', data.token)
     setAccessGranted(true)
     setMode('userLogin')
-    
-    // Clear any existing admin session to avoid confusion
     localStorage.removeItem('adminToken')
     localStorage.removeItem('adminUsername')
   }
@@ -441,38 +472,57 @@ function App() {
     setMode('main')
   }
 
+  // Handler for toggling auth requirement
+  const handleToggleAuthRequired = useCallback(async (newValue: boolean) => {
+    setAuthRequired(newValue)
+    localStorage.setItem('authRequired', newValue.toString())
+    try {
+      await api.updateSettings({ authRequired: newValue })
+    } catch {
+      // Server might not support this endpoint yet
+    }
+  }, [])
+
   // Show admin login (for admin panel access)
   if (mode === 'adminLogin') {
     return (
-      <AdminLogin 
-        onLogin={handleAdminLogin} 
-        onBackToUserLogin={() => setMode('main')}
-      />
+      <Router>
+        <AdminLogin 
+          onLogin={handleAdminLogin} 
+          onBackToUserLogin={() => setMode('main')}
+        />
+      </Router>
     )
   }
 
   // Show admin dashboard
   if (mode === 'adminDashboard') {
     return (
-      <AdminDashboard 
-        onLogout={handleAdminLogout}
-        username={adminUsername}
-      />
+      <Router>
+        <AdminDashboard 
+          onLogout={handleAdminLogout}
+          username={adminUsername}
+          authRequired={authRequired}
+          onToggleAuthRequired={handleToggleAuthRequired}
+        />
+      </Router>
     )
   }
 
   // Show access login (for quiz access)
   if (mode === 'accessLogin') {
     return (
-      <AdminLogin 
-        onLogin={handleAccessLogin} 
-        onBackToUserLogin={() => setMode('main')}
-      />
+      <Router>
+        <AdminLogin 
+          onLogin={handleAccessLogin} 
+          onBackToUserLogin={() => setMode('main')}
+        />
+      </Router>
     )
   }
 
-  // Show main screen (no access granted)
-  if (!accessGranted) {
+  // Show main screen (no access granted) - only if auth is required
+  if (!accessGranted && authRequired) {
     return (
       <Router>
         <div className="app-container">
@@ -498,7 +548,7 @@ function App() {
     )
   }
 
-  // Main app with routing
+  // Main app with routing (when no auth required or access granted)
   return (
     <Router>
       <Routes>
@@ -509,6 +559,7 @@ function App() {
             <QuizPage 
               accessGranted={accessGranted} 
               setMode={setMode}
+              authRequired={authRequired}
             />
           } 
         />
