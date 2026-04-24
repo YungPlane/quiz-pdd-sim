@@ -165,7 +165,10 @@ export function AdminDashboard({ onLogout, username, authRequired, onToggleAuthR
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString('ru-RU', {
+    const date = new Date(dateString);
+    // Добавляем 3 часа к времени
+    date.setHours(date.getHours() + 3);
+    return date.toLocaleString('ru-RU', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
